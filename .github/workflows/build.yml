@@ -28,7 +28,9 @@ jobs:
       - name: Build APK
         run: |
           cd jarvis_app
-          flutter build apk --debug --no-tree-shake-icons
+          flutter build apk --debug \
+            --no-tree-shake-icons \
+            --android-skip-build-dependency-validation
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
