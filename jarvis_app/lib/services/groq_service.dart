@@ -2,7 +2,7 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 
 class GroqService {
-  final String _apiKey = 'AQ.Ab8RN6LxRHPtewWwEUlOzOUpcM5NbiJXtbWrnpcazM8pymBkHQ';
+  final String _apiKey = 'YOUR_API_KEY';
   final String _url = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent';
   final List<Map<String, dynamic>> _history = [];
 
