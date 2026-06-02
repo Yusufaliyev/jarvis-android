@@ -1,120 +1,219 @@
 import 'dart:math';
 import 'package:flutter/material.dart';
+import 'package:flutter/scheduler.dart';
 
 class JarvisOrb extends StatefulWidget {
   final bool isListening;
   final bool isThinking;
   final bool isSpeaking;
-  const JarvisOrb({Key? key, required this.isListening, required this.isThinking, required this.isSpeaking}) : super(key: key);
+  const JarvisOrb({
+    Key? key,
+    required this.isListening,
+    required this.isThinking,
+    required this.isSpeaking,
+  }) : super(key: key);
+
   @override
   _JarvisOrbState createState() => _JarvisOrbState();
 }
 
-class _JarvisOrbState extends State<JarvisOrb> with TickerProviderStateMixin {
-  late AnimationController _rotCtrl, _pulseCtrl, _particleCtrl;
+class _JarvisOrbState extends State<JarvisOrb>
+    with SingleTickerProviderStateMixin {
+  late Ticker _ticker;
+  double _rotX = 0;
+  double _rotY = 0;
+  double _time = 0;
+
   @override
   void initState() {
     super.initState();
-    _rotCtrl = AnimationController(duration: Duration(seconds: 6), vsync: this)..repeat();
-    _pulseCtrl = AnimationController(duration: Duration(milliseconds: 1200), vsync: this)..repeat(reverse: true);
-    _particleCtrl = AnimationController(duration: Duration(seconds: 3), vsync: this)..repeat();
+    _ticker = createTicker((elapsed) {
+      if (mounted) {
+        setState(() {
+          _time = elapsed.inMilliseconds.toDouble();
+          _rotX = _time * 0.000003;
+          _rotY = _time * 0.000005;
+        });
+      }
+    });
+    _ticker.start();
   }
+
   @override
   Widget build(BuildContext context) {
-    return AnimatedBuilder(
-      animation: Listenable.merge([_rotCtrl, _pulseCtrl, _particleCtrl]),
-      builder: (_, __) => CustomPaint(
-        size: Size(270, 270),
-        painter: OrbPainter(
-          rotation: _rotCtrl.value * 2 * pi,
-          pulse: _pulseCtrl.value,
-          particle: _particleCtrl.value,
-          isListening: widget.isListening,
-          isThinking: widget.isThinking,
-          isSpeaking: widget.isSpeaking,
+    return RepaintBoundary(
+      child: CustomPaint(
+        size: Size(300, 300),
+        painter: SpherePainter(
+          rotX: _rotX,
+          rotY: _rotY,
+          time: _time,
+          isListening: isListening,
+          isThinking: isThinking,
+          isSpeaking: isSpeaking,
         ),
       ),
     );
   }
+
+  bool get isListening => widget.isListening;
+  bool get isThinking => widget.isThinking;
+  bool get isSpeaking => widget.isSpeaking;
+
   @override
-  void dispose() { _rotCtrl.dispose(); _pulseCtrl.dispose(); _particleCtrl.dispose(); super.dispose(); }
+  void dispose() {
+    _ticker.dispose();
+    super.dispose();
+  }
 }
 
-class OrbPainter extends CustomPainter {
-  final double rotation, pulse, particle;
+class SpherePainter extends CustomPainter {
+  final double rotX, rotY, time;
   final bool isListening, isThinking, isSpeaking;
-  OrbPainter({required this.rotation, required this.pulse, required this.particle, required this.isListening, required this.isThinking, required this.isSpeaking});
 
-  Color get color {
-    if (isListening) return Color(0xFFFF3366);
-    if (isThinking) return Color(0xFFFFAA00);
-    if (isSpeaking) return Color(0xFF00FF88);
-    return Color(0xFF00D4FF);
+  SpherePainter({
+    required this.rotX,
+    required this.rotY,
+    required this.time,
+    required this.isListening,
+    required this.isThinking,
+    required this.isSpeaking,
+  });
+
+  // Pre-generated dots (static — faqat bir marta yaratiladi)
+  static final List<_Dot> _dots = _generateDots();
+
+  static List<_Dot> _generateDots() {
+    const numDots = 400;
+    final rng = Random(42);
+    List<_Dot> list = [];
+    for (int i = 0; i < numDots; i++) {
+      final phi = acos(-1 + (2 * i) / numDots);
+      final theta = sqrt(numDots * pi) * phi;
+      list.add(_Dot(
+        x: cos(theta) * sin(phi),
+        y: sin(theta) * sin(phi),
+        z: cos(phi),
+        baseSize: rng.nextDouble() * 1.8 + 0.8,
+      ));
+    }
+    return list;
+  }
+
+  Color get _color {
+    if (isListening) return const Color(0xFFFF3366);
+    if (isThinking) return const Color(0xFFFFAA00);
+    if (isSpeaking) return const Color(0xFF00FF88);
+    return const Color(0xFF4AF2FF);
   }
 
   @override
   void paint(Canvas canvas, Size size) {
-    final c = Offset(size.width / 2, size.height / 2);
-    final r = size.width / 2;
+    final cx = size.width / 2;
+    final cy = size.height / 2;
+    final r = size.width * 0.42;
 
-    canvas.drawCircle(c, r, Paint()
-      ..shader = RadialGradient(colors: [color.withOpacity(0.0), color.withOpacity(0.08 + pulse * 0.08), color.withOpacity(0.0)], stops: [0.4, 0.7, 1.0])
-          .createShader(Rect.fromCircle(center: c, radius: r)));
+    final cosY = cos(rotY), sinY = sin(rotY);
+    final cosX = cos(rotX), sinX = sin(rotX);
 
-    _ring(canvas, c, r * 0.88, rotation, color, 1.5);
-    _ring(canvas, c, r * 0.72, -rotation * 0.8, color.withOpacity(0.7), 1.2);
-    _ring(canvas, c, r * 0.56, rotation * 1.4, color.withOpacity(0.5), 0.9);
+    // Barcha nuqtalarni 3D → 2D ga o'tkazish
+    final List<_Projected> projected = [];
 
-    _neural(canvas, c, r * 0.65, rotation);
-    _particles(canvas, c, r, rotation);
+    for (final dot in _dots) {
+      // Koordinatlarni radius bilan kengaytirish
+      final dx = dot.x * r;
+      final dy = dot.y * r;
+      final dz = dot.z * r;
 
-    final coreR = r * 0.32 + pulse * 6;
-    canvas.drawCircle(c, coreR, Paint()
-      ..shader = RadialGradient(colors: [Colors.white.withOpacity(0.95), color.withOpacity(0.85), color.withOpacity(0.3), Colors.transparent], stops: [0.0, 0.25, 0.6, 1.0])
-          .createShader(Rect.fromCircle(center: c, radius: coreR)));
+      // Y o'qi atrofida aylantirish
+      final x1 = dx * cosY - dz * sinY;
+      final z1 = dz * cosY + dx * sinY;
 
-    canvas.drawCircle(c, coreR + 4, Paint()..color = color.withOpacity(0.3 + pulse * 0.3)..style = PaintingStyle.stroke..strokeWidth = 1.0);
+      // X o'qi atrofida aylantirish
+      final y2 = dy * cosX - z1 * sinX;
+      final z2 = z1 * cosX + dy * sinX;
 
-    if (isSpeaking || isListening) {
-      for (int i = 1; i <= 3; i++) {
-        canvas.drawCircle(c, r * 0.35 + i * 15 + pulse * 10, Paint()
-          ..color = color.withOpacity((0.3 - i * 0.08) * pulse)
-          ..style = PaintingStyle.stroke..strokeWidth = 1.0);
+      // Perspektiv proektsiya
+      const fov = 600.0;
+      final persp = fov / (fov - z2);
+      final px = x1 * persp + cx;
+      final py = y2 * persp + cy;
+
+      // Puls effekti (HTML dagi kabi)
+      final pulse = sin(dot.y * r * 0.015 + time * 0.005);
+      final intensity = pulse.clamp(0.0, 1.0);
+
+      // Chuqurlikka qarab shaffoflik
+      final opacity = ((z2 + r) / (r * 2)).clamp(0.05, 1.0);
+      final drawSize = dot.baseSize * persp * 0.55;
+
+      projected.add(_Projected(
+        x: px, y: py, z: z2,
+        size: drawSize,
+        intensity: intensity,
+        opacity: opacity,
+        originalY: dot.y * r,
+      ));
+    }
+
+    // Z ga qarab saralash (orqa → old)
+    projected.sort((a, b) => a.z.compareTo(b.z));
+
+    final color = _color;
+
+    // Oddiy nuqtalar (glow'siz)
+    final normalPaint = Paint()..style = PaintingStyle.fill;
+    final glowPaint = Paint()
+      ..style = PaintingStyle.fill
+      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 4);
+
+    for (final p in projected) {
+      final s = p.size * (1 + p.intensity * 0.6);
+
+      if (p.intensity > 0.75) {
+        // Yorqin nuqtalar — oq rang + glow
+        glowPaint.color = Colors.white.withOpacity(p.opacity * 0.95);
+        canvas.drawCircle(Offset(p.x, p.y), s, glowPaint);
+      } else {
+        // Oddiy nuqtalar — asosiy rang
+        normalPaint.color = color.withOpacity(p.opacity * 0.65);
+        canvas.drawCircle(Offset(p.x, p.y), s, normalPaint);
       }
     }
-  }
 
-  void _ring(Canvas canvas, Offset c, double r, double angle, Color col, double w) {
-    canvas.save();
-    canvas.translate(c.dx, c.dy);
-    canvas.rotate(angle);
-    canvas.drawOval(Rect.fromCenter(center: Offset.zero, width: r * 2, height: r * 0.38),
-      Paint()..color = col.withOpacity(0.65)..style = PaintingStyle.stroke..strokeWidth = w);
-    canvas.restore();
-  }
-
-  void _neural(Canvas canvas, Offset c, double r, double rot) {
-    final p = Paint()..color = color.withOpacity(0.12)..strokeWidth = 0.6..style = PaintingStyle.stroke;
-    final pts = List.generate(8, (i) {
-      final a = (i / 8) * 2 * pi + rot;
-      return Offset(c.dx + cos(a) * r, c.dy + sin(a) * r * 0.4);
-    });
-    for (int i = 0; i < pts.length; i++) {
-      canvas.drawLine(pts[i], pts[(i + 3) % pts.length], p);
-      canvas.drawLine(pts[i], c, Paint()..color = color.withOpacity(0.07)..strokeWidth = 0.6..style = PaintingStyle.stroke);
-    }
-  }
-
-  void _particles(Canvas canvas, Offset c, double r, double rot) {
-    final rng = Random(42);
-    for (int i = 0; i < 14; i++) {
-      final a = (i / 14) * 2 * pi + rot + particle * pi * 2;
-      final rad = r * (0.45 + rng.nextDouble() * 0.4);
-      canvas.drawCircle(Offset(c.dx + cos(a) * rad, c.dy + sin(a) * rad * 0.4),
-        1.5 + rng.nextDouble() * 2.5, Paint()..color = color.withOpacity(0.35 + rng.nextDouble() * 0.5));
-    }
+    // Markaziy yumshoq glow
+    final glowGrad = Paint()
+      ..shader = RadialGradient(
+        colors: [
+          color.withOpacity(0.15),
+          color.withOpacity(0.05),
+          Colors.transparent,
+        ],
+        stops: [0.0, 0.4, 1.0],
+      ).createShader(Rect.fromCircle(center: Offset(cx, cy), radius: r * 0.6));
+    canvas.drawCircle(Offset(cx, cy), r * 0.6, glowGrad);
   }
 
   @override
-  bool shouldRepaint(_) => true;
+  bool shouldRepaint(SpherePainter old) =>
+      old.rotX != rotX ||
+      old.rotY != rotY ||
+      old.time != time ||
+      old.isListening != isListening ||
+      old.isThinking != isThinking ||
+      old.isSpeaking != isSpeaking;
+}
+
+class _Dot {
+  final double x, y, z, baseSize;
+  const _Dot({required this.x, required this.y, required this.z, required this.baseSize});
+}
+
+class _Projected {
+  final double x, y, z, size, intensity, opacity, originalY;
+  _Projected({
+    required this.x, required this.y, required this.z,
+    required this.size, required this.intensity,
+    required this.opacity, required this.originalY,
+  });
 }
