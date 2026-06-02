@@ -19,10 +19,10 @@ class FirebaseService {
     for (var p in providers) {
       final key = prefs.getString('${p}_api_key') ?? '';
       if (key.isNotEmpty) {
-        result.add({
-          'provider': p,
-          'key': key.substring(0, 8) + '****' + key.substring(key.length > 12 ? key.length - 4 : key.length),
-        });
+        final masked = key.length > 12
+            ? key.substring(0, 8) + '****' + key.substring(key.length - 4)
+            : '****';
+        result.add({'provider': p, 'key': masked});
       }
     }
     return result;

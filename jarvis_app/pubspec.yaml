@@ -1,73 +1,25 @@
 name: jarvis_app
-description: "Jarvis v2.4 - Advanced AI Assistant with PIN/OTP/Firebase/MultiAI"
+description: JARVIS - AI Assistant
 publish_to: 'none'
-
-version: 2.4.0+24
+version: 2.5.0+1
 
 environment:
-  sdk: ^3.12.0
+  sdk: '>=3.0.0 <4.0.0'
 
 dependencies:
   flutter:
     sdk: flutter
-
-  # UI & Material Design
-  cupertino_icons: ^1.0.8
-  material_design_icons_flutter: ^7.0.7296
-  flutter_animate: ^4.2.0
-  lottie: ^2.7.0
-
-  # Speech & Voice
   speech_to_text: ^7.4.0
   flutter_tts: ^4.2.5
-
-  # Networking
   http: ^1.6.0
-  dio: ^5.4.0
-  
-  # Storage & Security
-  shared_preferences: ^2.5.5
-  flutter_secure_storage: ^9.2.2
-  encryption: ^2.8.0
-
-  # Firebase
-  firebase_core: ^3.1.0
-  firebase_auth: ^5.1.0
-  firebase_database: ^11.0.0
-  firebase_messaging: ^15.0.0
-  firebase_analytics: ^11.0.0
-
-  # Authentication
-  google_sign_in: ^6.1.6
-  sign_in_with_apple: ^6.0.0
-
-  # Permissions & Utils
   permission_handler: ^12.0.3
   url_launcher: ^6.3.2
-  device_info_plus: ^9.1.2
-  package_info_plus: ^8.0.0
-
-  # State Management
-  provider: ^6.0.0
-
-  # Logging & Analytics
-  logger: ^2.0.1
+  shared_preferences: ^2.5.5
 
 dev_dependencies:
   flutter_test:
     sdk: flutter
-  flutter_lints: ^6.0.0
+  flutter_lints: ^3.0.0
 
 flutter:
   uses-material-design: true
-
-  # Assets for animations & UI
-  # assets:
-  #   - assets/animations/
-  #   - assets/images/
-
-  # Fonts
-  # fonts:
-  #   - family: Roboto
-  #     fonts:
-  #       - asset: assets/fonts/Roboto-Regular.ttf
