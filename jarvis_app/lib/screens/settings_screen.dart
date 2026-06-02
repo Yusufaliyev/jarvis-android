@@ -27,8 +27,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
   void initState() { super.initState(); _loadAll(); }
 
   Future<void> _loadAll() async {
-    final prefs = await SharedPreferences.getInstance();
-    _nameCtrl.text = prefs.getString('user_name') ?? '';
     setState(() => _loading = true);
     final prefs = await SharedPreferences.getInstance();
     _geminiCtrl.text = prefs.getString('gemini_api_key') ?? '';
