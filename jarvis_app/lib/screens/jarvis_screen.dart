@@ -9,6 +9,8 @@ import '../widgets/jarvis_orb.dart';
 import 'auth_screen.dart';
 
 class JarvisScreen extends StatefulWidget {
+  final String? greeting;
+  const JarvisScreen({Key? key, this.greeting}) : super(key: key);
   @override
   _JarvisScreenState createState() => _JarvisScreenState();
 }
@@ -66,7 +68,7 @@ class _JarvisScreenState extends State<JarvisScreen>
     _tts.setCompletionHandler(
         () { if (mounted) setState(() => _speaking = false); });
     await Future.delayed(Duration(milliseconds: 1000));
-    _speak('Assalomu alaykum! Men Jarvis. Buyuring!');
+    _speak(widget.greeting ?? 'Assalomu alaykum! Men Jarvis. Buyuring!');
   }
 
   Future<void> _speak(String text) async {

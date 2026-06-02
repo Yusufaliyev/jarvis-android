@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'screens/splash_screen.dart';
+import 'screens/face_auth_screen.dart';
 import 'services/permission_service.dart';
 
 void main() async {
@@ -21,7 +21,7 @@ class JarvisApp extends StatelessWidget {
         primaryColor: Color(0xFF00D4FF),
         scaffoldBackgroundColor: Color(0xFF030812),
       ),
-      home: SplashScreen(),
+      home: FaceAuthScreen(),
     );
   }
 }

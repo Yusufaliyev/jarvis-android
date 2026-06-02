@@ -10,6 +10,7 @@ class SettingsScreen extends StatefulWidget {
 }
 
 class _SettingsScreenState extends State<SettingsScreen> {
+  final _nameCtrl = TextEditingController();
   final _geminiCtrl = TextEditingController();
   final _openaiCtrl = TextEditingController();
   final _groqCtrl = TextEditingController();
@@ -26,6 +27,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
   void initState() { super.initState(); _loadAll(); }
 
   Future<void> _loadAll() async {
+    final prefs = await SharedPreferences.getInstance();
+    _nameCtrl.text = prefs.getString('user_name') ?? '';
     setState(() => _loading = true);
     final prefs = await SharedPreferences.getInstance();
     _geminiCtrl.text = prefs.getString('gemini_api_key') ?? '';
