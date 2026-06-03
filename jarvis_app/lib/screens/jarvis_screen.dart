@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:speech_to_text/speech_to_text.dart';
 import 'package:flutter_tts/flutter_tts.dart';
 import 'package:permission_handler/permission_handler.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../services/groq_service.dart';
 import '../services/command_service.dart';
 import '../services/weather_service.dart';
@@ -61,10 +62,11 @@ class _JarvisScreenState extends State<JarvisScreen>
   }
 
   Future<void> _initJarvis() async {
+    final prefs = await SharedPreferences.getInstance();
     await _tts.setLanguage('uz-UZ');
-    await _tts.setSpeechRate(0.88);
-    await _tts.setVolume(1.0);
-    await _tts.setPitch(1.0);
+    await _tts.setSpeechRate(prefs.getDouble('tts_rate') ?? 0.88);
+    await _tts.setVolume(prefs.getDouble('tts_volume') ?? 1.0);
+    await _tts.setPitch(prefs.getDouble('tts_pitch') ?? 1.0);
     _tts.setCompletionHandler(
         () { if (mounted) setState(() => _speaking = false); });
     await Future.delayed(Duration(milliseconds: 1000));
@@ -160,7 +162,6 @@ class _JarvisScreenState extends State<JarvisScreen>
     return Scaffold(
       backgroundColor: Color(0xFF030812),
       body: Stack(children: [
-        // Fon
         Container(
           decoration: BoxDecoration(
             gradient: RadialGradient(

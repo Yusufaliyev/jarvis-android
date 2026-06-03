@@ -67,10 +67,18 @@ class _FaceAuthScreenState extends State<FaceAuthScreen>
     try {
       final photo = await _camCtrl!.takePicture();
       final result = await FaceService.analyzeFile(photo.path);
+      
+      if (result == FaceResult.noFace) {
+        // Yuz topilmadi - qayta urinish
+        setState(() { _scanning = false; _status = 'Yuz topilmadi! Qayta urining...'; });
+        await Future.delayed(Duration(seconds: 2));
+        if (mounted) _takePicture();
+        return;
+      }
+      
       final greeting = FaceService.getGreeting(result, _userName);
-
-      setState(() { _done = true; _status = '✅ Aniqlandi!'; });
-      await Future.delayed(Duration(milliseconds: 700));
+      setState(() { _done = true; _status = '✅ Yuz tasdiqlandi!'; });
+      await Future.delayed(Duration(milliseconds: 800));
       _goMain(greeting);
     } catch (e) {
       _goMain('Assalomu alaykum! Men Jarvis. Buyuring!');

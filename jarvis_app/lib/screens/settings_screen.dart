@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../services/firebase_service.dart';
 import '../services/auth_service.dart';
+import '../services/groq_service.dart';
 
 class SettingsScreen extends StatefulWidget {
   @override
@@ -10,60 +12,92 @@ class SettingsScreen extends StatefulWidget {
 }
 
 class _SettingsScreenState extends State<SettingsScreen> {
-  final _nameCtrl = TextEditingController();
-  final _geminiCtrl = TextEditingController();
-  final _openaiCtrl = TextEditingController();
-  final _groqCtrl = TextEditingController();
+  final Map<String, TextEditingController> _ctrls = {};
   final _pinCtrl = TextEditingController();
   final _pinConfirmCtrl = TextEditingController();
-  String _selectedProvider = 'gemini';
-  String _generatedOtp = '';
-  List<Map<String, dynamic>> _savedData = [];
+  final _nameCtrl = TextEditingController();
+  String _provider = 'gemini';
+  String _otp = '';
+  List<Map<String, dynamic>> _saved = [];
   bool _hasPin = false;
   bool _loading = false;
-  Map<String, bool> _visible = {'gemini': false, 'openai': false, 'groq': false};
+  double _ttsRate = 0.88;
+  double _ttsPitch = 1.0;
+  double _ttsVolume = 1.0;
 
   @override
-  void initState() { super.initState(); _loadAll(); }
+  void initState() {
+    super.initState();
+    for (final k in GroqService.providers.keys) {
+      _ctrls[k] = TextEditingController();
+    }
+    _load();
+  }
 
-  Future<void> _loadAll() async {
+  Future<void> _load() async {
     setState(() => _loading = true);
     final prefs = await SharedPreferences.getInstance();
-    _geminiCtrl.text = prefs.getString('gemini_api_key') ?? '';
-    _openaiCtrl.text = prefs.getString('openai_api_key') ?? '';
-    _groqCtrl.text = prefs.getString('groq_api_key') ?? '';
-    _selectedProvider = prefs.getString('ai_provider') ?? 'gemini';
+    _provider = prefs.getString('ai_provider') ?? 'gemini';
+    _nameCtrl.text = prefs.getString('user_name') ?? '';
+    _ttsRate = prefs.getDouble('tts_rate') ?? 0.88;
+    _ttsPitch = prefs.getDouble('tts_pitch') ?? 1.0;
+    _ttsVolume = prefs.getDouble('tts_volume') ?? 1.0;
+    for (final k in GroqService.providers.keys) {
+      _ctrls[k]?.text = prefs.getString('${k}_api_key') ?? '';
+    }
     _hasPin = await AuthService.hasPin();
-    _savedData = await FirebaseService.getSavedData();
+    _saved = await FirebaseService.getSavedData();
     setState(() => _loading = false);
   }
 
-  Future<void> _saveKey(String provider, String key) async {
-    if (key.trim().isEmpty) { _msg('Key bo\'sh bo\'lmasin!'); return; }
+  Future<void> _saveKey(String provider) async {
+    final key = _ctrls[provider]?.text.trim() ?? '';
+    if (key.isEmpty) { _snack('Key bo\'sh!'); return; }
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setString('${provider}_api_key', key.trim());
-    await prefs.setString('ai_provider', _selectedProvider);
-    await FirebaseService.saveApiKey(provider, key.trim());
-    _msg('✅ Saqlandi!');
-    _loadAll();
+    await prefs.setString('${provider}_api_key', key);
+    await prefs.setString('ai_provider', provider);
+    setState(() => _provider = provider);
+    await FirebaseService.saveApiKey(provider, key);
+    _snack('✅ ${GroqService.providers[provider]!['name']} key saqlandi!');
+    _load();
+  }
+
+  Future<void> _saveTts() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setDouble('tts_rate', _ttsRate);
+    await prefs.setDouble('tts_pitch', _ttsPitch);
+    await prefs.setDouble('tts_volume', _ttsVolume);
+    _snack('✅ Ovoz sozlamalari saqlandi!');
+  }
+
+  Future<void> _saveName() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('user_name', _nameCtrl.text.trim());
+    _snack('✅ Ism saqlandi!');
   }
 
   Future<void> _savePin() async {
-    if (_pinCtrl.text.length < 4) { _msg('PIN kamida 4 raqam!'); return; }
-    if (_pinCtrl.text != _pinConfirmCtrl.text) { _msg('PIN lar mos kelmadi!'); return; }
+    if (_pinCtrl.text.length < 4) { _snack('PIN kamida 4 raqam!'); return; }
+    if (_pinCtrl.text != _pinConfirmCtrl.text) { _snack('PIN lar mos kelmadi!'); return; }
     await AuthService.setPin(_pinCtrl.text);
     setState(() => _hasPin = true);
     _pinCtrl.clear(); _pinConfirmCtrl.clear();
-    _msg('✅ PIN o\'rnatildi!');
+    _snack('✅ PIN o\'rnatildi!');
   }
 
-  Future<void> _generateOtp() async {
-    final otp = await AuthService.generateOtp();
-    setState(() => _generatedOtp = otp);
+  Future<void> _genOtp() async {
+    final o = await AuthService.generateOtp();
+    setState(() => _otp = o);
   }
 
-  void _msg(String m) => ScaffoldMessenger.of(context).showSnackBar(
-    SnackBar(content: Text(m), duration: Duration(seconds: 2)));
+  void _copy(String text) {
+    Clipboard.setData(ClipboardData(text: text));
+    _snack('📋 Nusxa olindi!');
+  }
+
+  void _snack(String msg) => ScaffoldMessenger.of(context).showSnackBar(
+    SnackBar(content: Text(msg), duration: Duration(seconds: 2),
+      backgroundColor: msg.contains('✅') ? Color(0xFF00FF88) : Colors.red));
 
   @override
   Widget build(BuildContext context) {
@@ -71,165 +105,310 @@ class _SettingsScreenState extends State<SettingsScreen> {
       backgroundColor: Color(0xFF030812),
       appBar: AppBar(
         backgroundColor: Colors.transparent, elevation: 0,
-        leading: IconButton(icon: Icon(Icons.arrow_back_ios, color: Color(0xFF00D4FF)), onPressed: () => Navigator.pop(context)),
-        title: Text('SOZLAMALAR', style: TextStyle(color: Color(0xFF00D4FF), letterSpacing: 4, fontSize: 16)),
-        actions: [if (_loading) Padding(padding: EdgeInsets.all(16), child: SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFF00D4FF))))],
+        leading: IconButton(
+          icon: Icon(Icons.arrow_back_ios, color: Color(0xFF00D4FF)),
+          onPressed: () => Navigator.pop(context)),
+        title: Text('SOZLAMALAR', style: TextStyle(
+          color: Color(0xFF00D4FF), fontSize: 16, letterSpacing: 4)),
+        actions: [if (_loading) Padding(padding: EdgeInsets.all(16),
+          child: SizedBox(width: 18, height: 18,
+            child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFF00D4FF))))],
       ),
-      body: SingleChildScrollView(padding: EdgeInsets.all(16), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        _title('🧠 AI Tanlash'),
-        _card(Column(children: [
-          _provider('gemini', 'Google Gemini', '🟢 Bepul'),
-          _provider('openai', 'OpenAI GPT', '🔵 Pullik'),
-          _provider('groq', 'Groq Llama', '🟡 Bepul'),
-        ])),
-        _title('🔑 API Key'),
-        _card(Column(children: [
-          if (_selectedProvider == 'gemini') ...[
-            Text('aistudio.google.com → API Keys', style: TextStyle(color: Colors.white30, fontSize: 12)),
-            SizedBox(height: 8),
-            _keyField(_geminiCtrl, 'AIzaSy...', 'gemini'),
-            SizedBox(height: 12),
-            _btn('Gemini keyni saqlash', () => _saveKey('gemini', _geminiCtrl.text)),
-          ],
-          if (_selectedProvider == 'openai') ...[
-            Text('platform.openai.com → API Keys', style: TextStyle(color: Colors.white30, fontSize: 12)),
-            SizedBox(height: 8),
-            _keyField(_openaiCtrl, 'sk-...', 'openai'),
-            SizedBox(height: 12),
-            _btn('OpenAI keyni saqlash', () => _saveKey('openai', _openaiCtrl.text)),
-          ],
-          if (_selectedProvider == 'groq') ...[
-            Text('console.groq.com → API Keys', style: TextStyle(color: Colors.white30, fontSize: 12)),
-            SizedBox(height: 8),
-            _keyField(_groqCtrl, 'gsk_...', 'groq'),
-            SizedBox(height: 12),
-            _btn('Groq keyni saqlash', () => _saveKey('groq', _groqCtrl.text)),
-          ],
-        ])),
-        _title('💾 Saqlangan Ma\'lumotlar'),
-        _card(_savedData.isEmpty
-          ? Center(child: Padding(padding: EdgeInsets.all(16), child: Text('Hali saqlangan key yo\'q', style: TextStyle(color: Colors.white24))))
-          : Column(children: [
-              ..._savedData.map((d) => Container(margin: EdgeInsets.only(bottom: 8), padding: EdgeInsets.all(12),
-                decoration: BoxDecoration(border: Border.all(color: Colors.white12), borderRadius: BorderRadius.circular(10)),
-                child: Row(children: [
-                  Icon(Icons.key, color: Color(0xFF00D4FF), size: 16),
-                  SizedBox(width: 8),
-                  Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                    Text(d['provider'].toString().toUpperCase(), style: TextStyle(color: Colors.white60, fontSize: 12)),
-                    Text(d['key'] ?? '', style: TextStyle(color: Colors.white30, fontSize: 11)),
-                  ])),
-                  Icon(Icons.check_circle_outline, color: Color(0xFF00FF88), size: 16),
-                ])) as Widget).toList(),
-              TextButton.icon(onPressed: _loadAll, icon: Icon(Icons.refresh, color: Color(0xFF00D4FF), size: 16),
-                label: Text('Yangilash', style: TextStyle(color: Color(0xFF00D4FF)))),
-            ])),
-        _title('🔒 PIN Xavfsizlik'),
-        _card(Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          if (!_hasPin) ...[
-            _inputField(_pinCtrl, 'Yangi PIN (4-6 raqam)', isNumber: true, maxLen: 6, obscure: true),
+      body: SingleChildScrollView(
+        padding: EdgeInsets.all(16),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+
+          // ── SHAXSIY ──
+          _title('👤 Shaxsiy Ma\'lumot'),
+          _card(Column(children: [
+            _input(_nameCtrl, 'Ismingiz', 'Yusuf'),
             SizedBox(height: 10),
-            _inputField(_pinConfirmCtrl, 'PIN tasdiqlash', isNumber: true, maxLen: 6, obscure: true),
-            SizedBox(height: 12),
-            _btn('PIN o\'rnatish', _savePin),
-          ] else Row(children: [
-            Icon(Icons.check_circle, color: Color(0xFF00FF88), size: 18),
-            SizedBox(width: 8),
-            Text('PIN o\'rnatilgan', style: TextStyle(color: Color(0xFF00FF88))),
-            Spacer(),
-            TextButton(onPressed: () async { await AuthService.removePin(); setState(() => _hasPin = false); },
-              child: Text('O\'chirish', style: TextStyle(color: Colors.red, fontSize: 12))),
-          ]),
-        ])),
-        _title('🎲 OTP Generatsiya'),
-        _card(Column(children: [
-          Text('5 daqiqa amal qiladigan bir martalik kod', style: TextStyle(color: Colors.white30, fontSize: 12)),
-          SizedBox(height: 12),
-          _btn('OTP Generatsiya', _generateOtp),
-          if (_generatedOtp.isNotEmpty) ...[
-            SizedBox(height: 16),
-            Container(padding: EdgeInsets.all(20),
-              decoration: BoxDecoration(border: Border.all(color: Color(0xFF00FF88).withOpacity(0.3)), borderRadius: BorderRadius.circular(16), color: Color(0xFF00FF88).withOpacity(0.05)),
-              child: Column(children: [
-                Text('OTP kodingiz:', style: TextStyle(color: Colors.white38, fontSize: 12)),
-                SizedBox(height: 8),
-                Text(_generatedOtp, style: TextStyle(color: Color(0xFF00FF88), fontSize: 42, fontWeight: FontWeight.bold, letterSpacing: 12)),
-                SizedBox(height: 8),
-                GestureDetector(onTap: () { Clipboard.setData(ClipboardData(text: _generatedOtp)); _msg('Nusxa olindi!'); },
-                  child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-                    Icon(Icons.copy, color: Color(0xFF00D4FF), size: 16),
-                    SizedBox(width: 4),
-                    Text('Nusxa olish', style: TextStyle(color: Color(0xFF00D4FF), fontSize: 12)),
-                  ])),
+            _btn('Ismni saqlash', _saveName),
+          ])),
+
+          // ── AI TANLASH ──
+          _title('🧠 AI Provider Tanlash'),
+          _card(Column(children: GroqService.providers.entries.map((e) =>
+            _providerTile(e.key, e.value)).toList())),
+
+          // ── API KEYS ──
+          _title('🔑 API Keylar'),
+          _card(Column(
+            children: GroqService.providers.entries.map((e) =>
+              _apiKeySection(e.key, e.value)).toList(),
+          )),
+
+          // ── SAQLANGAN KEYLAR ──
+          _title('💾 Saqlangan Keylar'),
+          _card(_saved.isEmpty
+            ? Padding(
+                padding: EdgeInsets.all(16),
+                child: Text('Hali key saqlanmagan', style: TextStyle(color: Colors.white24)))
+            : Column(children: [
+                ..._saved.map((d) => _savedTile(d)),
+                TextButton.icon(
+                  onPressed: _load,
+                  icon: Icon(Icons.refresh, color: Color(0xFF00D4FF), size: 16),
+                  label: Text('Yangilash', style: TextStyle(color: Color(0xFF00D4FF)))),
               ])),
-          ],
-        ])),
-        _title('🎙️ Buyruqlar'),
-        _card(Column(children: [
-          _cmd('Ilovalar', 'Telegram, YouTube, Instagram, WhatsApp, TikTok, Spotify'),
-          _cmd('Qidiruv', '"[narsa] qidir"'),
-          _cmd('Qo\'ng\'iroq', '"[raqam]ga qo\'ng\'iroq"'),
-          _cmd('SMS', '"[raqam]ga SMS"'),
-          _cmd('Ob-havo', '"Bugun havo qanday?"'),
-          _cmd('Vaqt', '"Soat necha?"'),
-          _cmd('Musiqa', '"[qo\'shiq] qo\'y"'),
-        ])),
-        SizedBox(height: 30),
-      ])),
+
+          // ── OVOZ SOZLAMALARI ──
+          _title('🔊 Jarvis Ovozi'),
+          _card(Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            _sliderRow('🚀 Tezlik', _ttsRate, 0.3, 1.5, (v) => setState(() => _ttsRate = v)),
+            _sliderRow('🎵 Balandlik', _ttsPitch, 0.5, 2.0, (v) => setState(() => _ttsPitch = v)),
+            _sliderRow('🔉 Ovoz', _ttsVolume, 0.0, 1.0, (v) => setState(() => _ttsVolume = v)),
+            SizedBox(height: 10),
+            _btn('Ovoz sozlamalarini saqlash', _saveTts),
+          ])),
+
+          // ── XAVFSIZLIK ──
+          _title('🔒 Xavfsizlik'),
+          _card(Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            if (!_hasPin) ...[
+              _input(_pinCtrl, 'Yangi PIN (4-6 raqam)', '••••', isNum: true, maxLen: 6, obscure: true),
+              SizedBox(height: 8),
+              _input(_pinConfirmCtrl, 'PIN tasdiqlash', '••••', isNum: true, maxLen: 6, obscure: true),
+              SizedBox(height: 10),
+              _btn('PIN o\'rnatish', _savePin),
+            ] else Row(children: [
+              Icon(Icons.check_circle, color: Color(0xFF00FF88), size: 20),
+              SizedBox(width: 8),
+              Text('PIN o\'rnatilgan', style: TextStyle(color: Color(0xFF00FF88))),
+              Spacer(),
+              TextButton(
+                onPressed: () async { await AuthService.removePin(); setState(() => _hasPin = false); },
+                child: Text('O\'chirish', style: TextStyle(color: Colors.red, fontSize: 12))),
+            ]),
+          ])),
+
+          // ── OTP ──
+          _title('🎲 OTP Generatsiya'),
+          _card(Column(children: [
+            _btn('OTP Yaratish (5 daqiqa)', _genOtp),
+            if (_otp.isNotEmpty) ...[
+              SizedBox(height: 14),
+              Container(
+                padding: EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  border: Border.all(color: Color(0xFF00FF88).withOpacity(0.3)),
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: Column(children: [
+                  Text(_otp, style: TextStyle(
+                    color: Color(0xFF00FF88), fontSize: 40,
+                    fontWeight: FontWeight.bold, letterSpacing: 10)),
+                  SizedBox(height: 8),
+                  Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+                    TextButton.icon(
+                      onPressed: () => _copy(_otp),
+                      icon: Icon(Icons.copy, color: Color(0xFF00D4FF), size: 16),
+                      label: Text('Nusxa', style: TextStyle(color: Color(0xFF00D4FF), fontSize: 12))),
+                  ]),
+                ]),
+              ),
+            ],
+          ])),
+
+          SizedBox(height: 30),
+        ]),
+      ),
     );
   }
 
-  Widget _title(String t) => Padding(padding: EdgeInsets.only(top: 20, bottom: 10),
-    child: Text(t, style: TextStyle(color: Color(0xFF00D4FF), fontSize: 15, fontWeight: FontWeight.bold)));
+  Widget _title(String t) => Padding(
+    padding: EdgeInsets.only(top: 20, bottom: 10),
+    child: Text(t, style: TextStyle(color: Color(0xFF00D4FF),
+      fontSize: 15, fontWeight: FontWeight.bold)));
 
-  Widget _card(Widget child) => Container(width: double.infinity, padding: EdgeInsets.all(16),
-    decoration: BoxDecoration(border: Border.all(color: Colors.white.withOpacity(0.08)), borderRadius: BorderRadius.circular(18), color: Colors.white.withOpacity(0.03)),
+  Widget _card(Widget child) => Container(
+    width: double.infinity, padding: EdgeInsets.all(16),
+    decoration: BoxDecoration(
+      border: Border.all(color: Colors.white.withOpacity(0.08)),
+      borderRadius: BorderRadius.circular(18),
+      color: Colors.white.withOpacity(0.03)),
     child: child);
 
-  Widget _provider(String id, String name, String desc) => GestureDetector(
-    onTap: () async { setState(() => _selectedProvider = id); final p = await SharedPreferences.getInstance(); await p.setString('ai_provider', id); },
-    child: Container(margin: EdgeInsets.only(bottom: 8), padding: EdgeInsets.all(14),
-      decoration: BoxDecoration(border: Border.all(color: _selectedProvider == id ? Color(0xFF00D4FF) : Colors.white12, width: _selectedProvider == id ? 1.5 : 1), borderRadius: BorderRadius.circular(14), color: _selectedProvider == id ? Color(0xFF00D4FF).withOpacity(0.08) : Colors.transparent),
+  Widget _providerTile(String id, Map<String, String> info) => GestureDetector(
+    onTap: () async {
+      setState(() => _provider = id);
+      final p = await SharedPreferences.getInstance();
+      await p.setString('ai_provider', id);
+    },
+    child: Container(
+      margin: EdgeInsets.only(bottom: 8), padding: EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        border: Border.all(
+          color: _provider == id ? Color(0xFF00D4FF) : Colors.white12,
+          width: _provider == id ? 1.5 : 1),
+        borderRadius: BorderRadius.circular(12),
+        color: _provider == id ? Color(0xFF00D4FF).withOpacity(0.08) : Colors.transparent,
+      ),
       child: Row(children: [
+        Text(info['emoji']!, style: TextStyle(fontSize: 20)),
+        SizedBox(width: 10),
         Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Text(name, style: TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w500)),
-          Text(desc, style: TextStyle(color: Colors.white38, fontSize: 12)),
+          Text(info['name']!, style: TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w500)),
+          Text(info['free']!, style: TextStyle(color: Colors.white38, fontSize: 11)),
         ])),
-        if (_selectedProvider == id) Icon(Icons.check_circle, color: Color(0xFF00D4FF), size: 20),
-      ])));
+        if (_provider == id) Icon(Icons.check_circle, color: Color(0xFF00D4FF), size: 20),
+      ]),
+    ),
+  );
 
-  Widget _keyField(TextEditingController c, String hint, String key) => TextField(
-    controller: c, obscureText: !(_visible[key] ?? false),
-    style: TextStyle(color: Colors.white, fontSize: 13),
-    decoration: InputDecoration(hintText: hint, hintStyle: TextStyle(color: Colors.white24), filled: true, fillColor: Colors.white.withOpacity(0.04),
-      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: Colors.white12)),
-      enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: Colors.white12)),
-      focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: Color(0xFF00D4FF))),
-      suffixIcon: IconButton(icon: Icon(_visible[key]! ? Icons.visibility_off : Icons.visibility, color: Colors.white38, size: 20),
-        onPressed: () => setState(() => _visible[key] = !(_visible[key] ?? false)))));
+  Widget _apiKeySection(String id, Map<String, String> info) {
+    final ctrl = _ctrls[id]!;
+    final hasKey = ctrl.text.isNotEmpty;
+    return Container(
+      margin: EdgeInsets.only(bottom: 12),
+      padding: EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        border: Border.all(color: hasKey
+          ? Color(0xFF00FF88).withOpacity(0.2) : Colors.white.withOpacity(0.06)),
+        borderRadius: BorderRadius.circular(12)),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Row(children: [
+          Text('${info['emoji']} ${info['name']}',
+            style: TextStyle(color: Colors.white70, fontSize: 13, fontWeight: FontWeight.w500)),
+          Spacer(),
+          if (hasKey) Icon(Icons.check_circle_outline, color: Color(0xFF00FF88), size: 16),
+          // API olish linki
+          TextButton(
+            onPressed: () {
+              final urls = {
+                'gemini': 'https://aistudio.google.com',
+                'groq': 'https://console.groq.com',
+                'openai': 'https://platform.openai.com',
+                'mistral': 'https://console.mistral.ai',
+                'cohere': 'https://dashboard.cohere.ai',
+                'huggingface': 'https://huggingface.co/settings/tokens',
+                'openrouter': 'https://openrouter.ai/keys',
+              };
+              launchUrl(Uri.parse(urls[id] ?? 'https://google.com'),
+                mode: LaunchMode.externalApplication);
+            },
+            child: Text('Key olish', style: TextStyle(color: Color(0xFF00D4FF), fontSize: 11)),
+          ),
+        ]),
+        SizedBox(height: 8),
+        Row(children: [
+          Expanded(child: TextField(
+            controller: ctrl,
+            obscureText: true,
+            style: TextStyle(color: Colors.white, fontSize: 12),
+            decoration: InputDecoration(
+              hintText: 'Key kiriting...',
+              hintStyle: TextStyle(color: Colors.white24),
+              filled: true, fillColor: Colors.white.withOpacity(0.04),
+              contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              border: OutlineInputBorder(borderRadius: BorderRadius.circular(10),
+                borderSide: BorderSide(color: Colors.white12)),
+              enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10),
+                borderSide: BorderSide(color: Colors.white12)),
+              focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10),
+                borderSide: BorderSide(color: Color(0xFF00D4FF))),
+            ),
+          )),
+          SizedBox(width: 8),
+          // Saqlash
+          GestureDetector(
+            onTap: () => _saveKey(id),
+            child: Container(
+              padding: EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: Color(0xFF00D4FF).withOpacity(0.15),
+                borderRadius: BorderRadius.circular(10)),
+              child: Icon(Icons.save_rounded, color: Color(0xFF00D4FF), size: 20))),
+        ]),
+      ]),
+    );
+  }
 
-  Widget _inputField(TextEditingController c, String hint, {bool isNumber = false, int? maxLen, bool obscure = false}) => TextField(
-    controller: c, keyboardType: isNumber ? TextInputType.number : TextInputType.text,
-    maxLength: maxLen, obscureText: obscure,
-    style: TextStyle(color: Colors.white, fontSize: 13),
-    decoration: InputDecoration(hintText: hint, hintStyle: TextStyle(color: Colors.white24), counterText: '', filled: true, fillColor: Colors.white.withOpacity(0.04),
-      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: Colors.white12)),
-      enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: Colors.white12)),
-      focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: Color(0xFF00D4FF)))));
+  Widget _savedTile(Map<String, dynamic> d) => Container(
+    margin: EdgeInsets.only(bottom: 8),
+    padding: EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+    decoration: BoxDecoration(
+      border: Border.all(color: Colors.white.withOpacity(0.07)),
+      borderRadius: BorderRadius.circular(12),
+      color: Colors.white.withOpacity(0.03)),
+    child: Row(children: [
+      Text(GroqService.providers[d['provider']]?['emoji'] ?? '🔑',
+        style: TextStyle(fontSize: 18)),
+      SizedBox(width: 10),
+      Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Text(GroqService.providers[d['provider']]?['name'] ?? d['provider'],
+          style: TextStyle(color: Colors.white70, fontSize: 12)),
+        Text(d['key'] ?? '****', style: TextStyle(color: Colors.white30, fontSize: 11)),
+      ])),
+      // Nusxa olish
+      GestureDetector(
+        onTap: () {
+          final fullKey = _ctrls[d['provider']]?.text ?? '';
+          if (fullKey.isNotEmpty) _copy(fullKey);
+          else _snack('Key topilmadi');
+        },
+        child: Container(
+          padding: EdgeInsets.all(8),
+          decoration: BoxDecoration(
+            color: Color(0xFF00D4FF).withOpacity(0.1),
+            borderRadius: BorderRadius.circular(8)),
+          child: Icon(Icons.copy_rounded, color: Color(0xFF00D4FF), size: 16))),
+    ]),
+  );
 
-  Widget _btn(String label, VoidCallback fn) => SizedBox(width: double.infinity,
-    child: ElevatedButton(onPressed: fn, style: ElevatedButton.styleFrom(backgroundColor: Color(0xFF00D4FF), padding: EdgeInsets.symmetric(vertical: 14), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
-      child: Text(label, style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold, fontSize: 14))));
+  Widget _sliderRow(String label, double val, double min, double max, Function(double) onChange) =>
+    Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      Row(children: [
+        Text(label, style: TextStyle(color: Colors.white60, fontSize: 13)),
+        Spacer(),
+        Text(val.toStringAsFixed(2), style: TextStyle(color: Color(0xFF00D4FF), fontSize: 12)),
+      ]),
+      SliderTheme(
+        data: SliderTheme.of(context).copyWith(
+          activeTrackColor: Color(0xFF00D4FF),
+          thumbColor: Color(0xFF00D4FF),
+          inactiveTrackColor: Colors.white12,
+          overlayColor: Color(0xFF00D4FF).withOpacity(0.2),
+        ),
+        child: Slider(value: val, min: min, max: max, onChanged: onChange),
+      ),
+    ]);
 
-  Widget _cmd(String t, String d) => Padding(padding: EdgeInsets.only(bottom: 8),
-    child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      Container(width: 4, height: 4, margin: EdgeInsets.only(top: 7, right: 8), decoration: BoxDecoration(color: Color(0xFF00D4FF), shape: BoxShape.circle)),
-      Expanded(child: RichText(text: TextSpan(children: [
-        TextSpan(text: '$t: ', style: TextStyle(color: Colors.white60, fontSize: 12, fontWeight: FontWeight.bold)),
-        TextSpan(text: d, style: TextStyle(color: Colors.white30, fontSize: 12)),
-      ]))),
-    ]));
+  Widget _input(TextEditingController ctrl, String label, String hint,
+      {bool isNum = false, int? maxLen, bool obscure = false}) =>
+    TextField(
+      controller: ctrl,
+      keyboardType: isNum ? TextInputType.number : TextInputType.text,
+      maxLength: maxLen, obscureText: obscure,
+      style: TextStyle(color: Colors.white, fontSize: 13),
+      decoration: InputDecoration(
+        labelText: label, labelStyle: TextStyle(color: Colors.white38),
+        hintText: hint, hintStyle: TextStyle(color: Colors.white24),
+        counterText: '', filled: true, fillColor: Colors.white.withOpacity(0.04),
+        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12),
+          borderSide: BorderSide(color: Colors.white12)),
+        enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12),
+          borderSide: BorderSide(color: Colors.white12)),
+        focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12),
+          borderSide: BorderSide(color: Color(0xFF00D4FF))),
+      ),
+    );
+
+  Widget _btn(String label, VoidCallback fn) => SizedBox(
+    width: double.infinity,
+    child: ElevatedButton(
+      onPressed: fn,
+      style: ElevatedButton.styleFrom(
+        backgroundColor: Color(0xFF00D4FF),
+        padding: EdgeInsets.symmetric(vertical: 13),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
+      child: Text(label, style: TextStyle(
+        color: Colors.black, fontWeight: FontWeight.bold, fontSize: 14))));
 
   @override
-  void dispose() { _geminiCtrl.dispose(); _openaiCtrl.dispose(); _groqCtrl.dispose(); _pinCtrl.dispose(); _pinConfirmCtrl.dispose(); super.dispose(); }
+  void dispose() {
+    for (final c in _ctrls.values) c.dispose();
+    _pinCtrl.dispose(); _pinConfirmCtrl.dispose(); _nameCtrl.dispose();
+    super.dispose();
+  }
 }
