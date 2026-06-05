@@ -4,6 +4,8 @@ import 'package:flutter_tts/flutter_tts.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../services/groq_service.dart';
+import 'package:camera/camera.dart';
+import '../services/face_service.dart';
 import '../services/command_service.dart';
 import '../services/weather_service.dart';
 import '../widgets/jarvis_orb.dart';
@@ -414,9 +416,41 @@ class _JarvisScreenState extends State<JarvisScreen>
     ]),
   );
 
+  Future<void> _openInAppCamera() async {
+    await FaceService.init();
+    final cam = FaceService.frontCamera;
+    if (cam == null) { await _speak('Kamera topilmadi!'); return; }
+    _camCtrl = CameraController(cam, ResolutionPreset.medium, enableAudio: false);
+    await _camCtrl!.initialize();
+    setState(() => _showCamera = true);
+    await _speak('Kamera yoqildi! Yuzingizni ko'rmoqdaman...');
+    await Future.delayed(Duration(seconds: 2));
+    try {
+      final photo = await _camCtrl!.takePicture();
+      final result = await FaceService.analyzeFile(photo.path);
+      setState(() {
+        _emotion = result == FaceResult.happy ? '😊 Xursand'
+          : result == FaceResult.tired ? '😴 Charchagan'
+          : result == FaceResult.neutral ? '😐 Neytral'
+          : '🙂 Normal';
+      });
+      final greeting = FaceService.getGreeting(result, 'siz');
+      await _speak(greeting);
+    } catch (_) {
+      await _speak('Yuzni tahlil qilishda xato!');
+    }
+  }
+
+  void _closeCamera() {
+    _camCtrl?.dispose();
+    _camCtrl = null;
+    setState(() { _showCamera = false; _emotion = ''; });
+  }
+
   @override
   void dispose() {
     _btnsCtrl.dispose();
+    _camCtrl?.dispose();
     _micCtrl.dispose();
     _tts.stop();
     _speech.stop();

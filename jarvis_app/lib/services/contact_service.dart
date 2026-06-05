@@ -1,13 +1,14 @@
 import 'package:flutter_contacts/flutter_contacts.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'nlp_service.dart';
 
 class ContactService {
   static List<Contact> _contacts = [];
   static bool _loaded = false;
 
-  // Kontaktlarni yuklash
   static Future<bool> loadContacts() async {
+    if (_loaded && _contacts.isNotEmpty) return true;
     if (!await Permission.contacts.isGranted) {
       final r = await Permission.contacts.request();
       if (!r.isGranted) return false;
@@ -16,78 +17,97 @@ class ContactService {
       _contacts = await FlutterContacts.getContacts(withProperties: true);
       _loaded = true;
       return true;
-    } catch (e) {
-      return false;
-    }
+    } catch (_) { return false; }
   }
 
-  // Kontaktni ismdan qidirish
-  static Contact? findContact(String name) {
-    if (!_loaded || _contacts.isEmpty) return null;
-    final q = name.toLowerCase().trim();
-
-    // To'liq ism moslik
-    for (final c in _contacts) {
-      if (c.displayName.toLowerCase().contains(q)) return c;
+  // Munosabat bo'yicha qidirish (aka, opa, onam...)
+  static Contact? _findByRelationship(String relationship) {
+    final aliases = NlpService.relationships[relationship] ?? [];
+    for (final contact in _contacts) {
+      final name = contact.displayName.toLowerCase();
+      for (final alias in aliases) {
+        if (name.contains(alias)) return contact;
+      }
+      // Kontakt eslatmasida ham qidirish
+      for (final note in contact.notes) {
+        if (aliases.any((a) => note.note.toLowerCase().contains(a))) {
+          return contact;
+        }
+      }
     }
-
-    // Ism qismlari
-    for (final c in _contacts) {
-      final parts = c.displayName.toLowerCase().split(' ');
-      if (parts.any((p) => p.contains(q))) return c;
-    }
-
     return null;
   }
 
-  // Kontaktga qo'ng'iroq
-  static Future<String> callContact(String name) async {
-    if (!_loaded) await loadContacts();
-    final contact = findContact(name);
+  // Ism bo'yicha qidirish
+  static Contact? findContact(String name) {
+    if (!_loaded || _contacts.isEmpty) return null;
+    final q = name.toLowerCase().trim();
+    if (q.isEmpty) return null;
 
+    // To'liq moslik
+    for (final c in _contacts) {
+      if (c.displayName.toLowerCase() == q) return c;
+    }
+    // Qisman moslik
+    for (final c in _contacts) {
+      if (c.displayName.toLowerCase().contains(q)) return c;
+    }
+    // So'zma-so'z moslik
+    for (final c in _contacts) {
+      final parts = c.displayName.toLowerCase().split(' ');
+      if (parts.any((p) => p.startsWith(q) || q.startsWith(p))) return c;
+    }
+    return null;
+  }
+
+  // Munosabat orqali qo'ng'iroq
+  static Future<String> callByRelationship(String relationship) async {
+    final contact = _findByRelationship(relationship);
     if (contact == null) {
-      return '$name kontaktlarda topilmadi!';
+      final relName = NlpService.relationships[relationship]?.first ?? relationship;
+      return 'Kontaktlarda "$relName" topilmadi. Kontaktingizga qo\'shing!';
     }
-
-    if (contact.phones.isEmpty) {
-      return '${contact.displayName} ning raqami yo\'q!';
-    }
-
-    final phone = contact.phones.first.number.replaceAll(' ', '');
-    final uri = Uri.parse('tel:$phone');
-
-    if (await canLaunchUrl(uri)) {
-      await launchUrl(uri, mode: LaunchMode.externalApplication);
-      return '${contact.displayName} ga qo\'ng\'iroq qilinmoqda!';
-    }
-    return 'Qo\'ng\'iroq qilib bo\'lmadi!';
+    return _call(contact);
   }
 
-  // Kontaktga SMS
-  static Future<String> smsContact(String name, {String? text}) async {
-    if (!_loaded) await loadContacts();
+  // Ism orqali qo'ng'iroq
+  static Future<String> callContact(String name) async {
     final contact = findContact(name);
+    if (contact == null) return '"$name" kontaktlarda topilmadi!';
+    return _call(contact);
+  }
 
-    if (contact == null) return '$name kontaktlarda topilmadi!';
+  static Future<String> _call(Contact contact) async {
     if (contact.phones.isEmpty) return '${contact.displayName} ning raqami yo\'q!';
-
     final phone = contact.phones.first.number.replaceAll(' ', '');
-    final body = text != null ? Uri.encodeComponent(text) : '';
-    final uri = Uri.parse('sms:$phone?body=$body');
+    await launchUrl(Uri.parse('tel:$phone'), mode: LaunchMode.externalApplication);
+    return '${contact.displayName} ga qo\'ng\'iroq qilinmoqda! 📞';
+  }
 
-    if (await canLaunchUrl(uri)) {
-      await launchUrl(uri, mode: LaunchMode.externalApplication);
-      return '${contact.displayName} ga SMS ochildi!';
+  // Munosabat orqali SMS
+  static Future<String> smsByRelationship(String relationship) async {
+    final contact = _findByRelationship(relationship);
+    if (contact == null) {
+      final relName = NlpService.relationships[relationship]?.first ?? relationship;
+      return '"$relName" kontaktlarda topilmadi!';
     }
-    return 'SMS yuborib bo\'lmadi!';
+    return _sms(contact);
   }
 
-  // Kontaktlar ro'yxatini qaytarish
-  static List<String> getNames({int limit = 5}) {
-    if (!_loaded) return [];
-    return _contacts.take(limit).map((c) => c.displayName).toList();
+  // Ism orqali SMS
+  static Future<String> smsContact(String name, {String? text}) async {
+    final contact = findContact(name);
+    if (contact == null) return '"$name" kontaktlarda topilmadi!';
+    return _sms(contact, text: text);
   }
 
-  // Umumiy kontaktlar soni
+  static Future<String> _sms(Contact contact, {String? text}) async {
+    if (contact.phones.isEmpty) return '${contact.displayName} ning raqami yo\'q!';
+    final phone = contact.phones.first.number.replaceAll(' ', '');
+    final body = text != null ? '?body=${Uri.encodeComponent(text)}' : '';
+    await launchUrl(Uri.parse('sms:$phone$body'), mode: LaunchMode.externalApplication);
+    return '${contact.displayName} ga SMS ochildi! 💬';
+  }
+
   static int get count => _contacts.length;
 }
