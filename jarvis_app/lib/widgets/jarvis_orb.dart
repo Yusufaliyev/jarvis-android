@@ -23,17 +23,16 @@ class _JarvisOrbState extends State<JarvisOrb>
   double _rotX = 0;
   double _rotY = 0;
   double _time = 0;
-  int _statusIndex = 0;
+  int _statusIdx = 0;
 
-  // HTML dagi tasks[] ro'yxati — o'zbek tilida
   final List<String> _statuses = [
-    "Neyron og'irliklari ishga tushdi...",
+    "Neyron tarmoq faollashdi...",
     "Kontekst tahlil qilinmoqda...",
     "Vektor fazosi qidirilmoqda...",
     "Javob optimizatsiya qilinmoqda...",
     "Bilimlar sintezi amalga oshirilmoqda...",
-    "Parametrlar sozlanmoqda...",
-    "Ehtimollik taqsimoti baholanmoqda...",
+    "Tokenlar tahlil qilinmoqda...",
+    "Ehtimollik baholanmoqda...",
   ];
 
   @override
@@ -43,11 +42,9 @@ class _JarvisOrbState extends State<JarvisOrb>
       if (!mounted) return;
       setState(() {
         _time = elapsed.inMilliseconds.toDouble();
-        // HTML: rotationX += 0.003; rotationY += 0.005;
         _rotX += 0.003;
         _rotY += 0.005;
-        // Status matnni har 3 soniyada almashtirish
-        _statusIndex = (_time / 3000).floor() % _statuses.length;
+        _statusIdx = (_time / 3000).floor() % _statuses.length;
       });
     });
     _ticker.start();
@@ -55,42 +52,39 @@ class _JarvisOrbState extends State<JarvisOrb>
 
   @override
   Widget build(BuildContext context) {
-    final statusMsg = widget.isListening
-        ? "Ovozni qayta ishlamoqda..."
-        : widget.isThinking
-            ? "Fikrlamoqda..."
-            : widget.isSpeaking
-                ? "Javob tayyorlanmoqda..."
-                : _statuses[_statusIndex];
+    final status = widget.isListening ? "Ovozni qayta ishlamoqda..."
+        : widget.isThinking ? "Fikrlamoqda..."
+        : widget.isSpeaking ? "Javob berilmoqda..."
+        : _statuses[_statusIdx];
 
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        // 3D Shar
-        CustomPaint(
-          size: const Size(300, 300),
-          painter: _SpherePainter(
-            rotX: _rotX,
-            rotY: _rotY,
-            time: _time,
-            isListening: widget.isListening,
-            isThinking: widget.isThinking,
-            isSpeaking: widget.isSpeaking,
+        RepaintBoundary(
+          child: CustomPaint(
+            size: const Size(320, 320),
+            painter: _SpherePainter(
+              rotX: _rotX,
+              rotY: _rotY,
+              time: _time,
+              isListening: widget.isListening,
+              isThinking: widget.isThinking,
+              isSpeaking: widget.isSpeaking,
+            ),
           ),
         ),
-        const SizedBox(height: 14),
-        // HTML dagi #status-text
+        const SizedBox(height: 12),
         AnimatedSwitcher(
-          duration: const Duration(milliseconds: 600),
+          duration: const Duration(milliseconds: 700),
           transitionBuilder: (child, anim) =>
               FadeTransition(opacity: anim, child: child),
           child: Text(
-            statusMsg,
-            key: ValueKey(statusMsg),
+            status,
+            key: ValueKey(status),
             style: TextStyle(
-              color: const Color(0xFF4AF2FF).withOpacity(0.75),
+              color: const Color(0xFF4AF2FF).withOpacity(0.7),
               fontSize: 11,
-              letterSpacing: 1.8,
+              letterSpacing: 2,
               fontStyle: FontStyle.italic,
             ),
             textAlign: TextAlign.center,
@@ -107,7 +101,7 @@ class _JarvisOrbState extends State<JarvisOrb>
   }
 }
 
-// ─── CustomPainter ─────────────────────────────────────────────────────────
+// ─── Painter ──────────────────────────────────────────────────────────────
 
 class _SpherePainter extends CustomPainter {
   final double rotX, rotY, time;
@@ -122,161 +116,164 @@ class _SpherePainter extends CustomPainter {
     required this.isSpeaking,
   });
 
-  // HTML: 600 nuqtali Fibonacci shar — bir marta yaratiladi
-  static final List<_Dot> _dots = _buildDots();
+  // 2500 nuqtali Fibonacci shar — bir marta
+  static final List<_Dot> _dots = _build();
 
-  static List<_Dot> _buildDots() {
-    const numDots = 600;
-    final rng = Random(42);
+  static List<_Dot> _build() {
+    const n = 2500;
+    final rng = Random(12345);
     final list = <_Dot>[];
-    for (int i = 0; i < numDots; i++) {
-      final phi = acos(-1 + (2 * i) / numDots);
-      final theta = sqrt(numDots * pi) * phi;
+    for (int i = 0; i < n; i++) {
+      final phi = acos(-1 + (2 * i) / n);
+      final theta = sqrt(n * pi) * phi;
       list.add(_Dot(
-        // Normalized koordinatalar [-1, 1]
         x: cos(theta) * sin(phi),
         y: sin(theta) * sin(phi),
         z: cos(phi),
-        // HTML: Math.random() * 2 + 1
-        baseSize: rng.nextDouble() * 2 + 1,
+        size: rng.nextDouble() * 1.6 + 0.4,
+        layer: rng.nextInt(3), // 0=core, 1=mid, 2=outer
       ));
     }
     return list;
   }
 
-  // Holatga qarab asosiy rang
-  Color get _primaryColor {
+  Color get _base {
     if (isListening) return const Color(0xFFFF3366);
-    if (isThinking) return const Color(0xFFFFAA00);
-    if (isSpeaking) return const Color(0xFF00FF88);
-    return const Color(0xFF4AF2FF); // HTML: #4af2ff
+    if (isThinking)  return const Color(0xFFFFAA00);
+    if (isSpeaking)  return const Color(0xFF00FF88);
+    return const Color(0xFF4AF2FF);
   }
 
   @override
   void paint(Canvas canvas, Size size) {
-    final cx = size.width / 2;
+    final cx = size.width  / 2;
     final cy = size.height / 2;
+    final radius = size.width * 0.44;
+    final fov    = 1500.0 * (radius / 400.0);
 
-    // HTML: radius = 400 (canvas 1600x1600 da)
-    // Flutter: 300x300 uchun proportional
-    final radius = size.width * 0.43;
+    final cosY = cos(rotY), sinY = sin(rotY);
+    final cosX = cos(rotX), sinX = sin(rotX);
+    final col  = _base;
 
-    // HTML: perspective = 1500 / (1500 - z2)
-    // radius bilan scale qilamiz: fov = 1500 * (radius/400)
-    final fov = 1500.0 * (radius / 400.0);
-
-    final cosY = cos(rotY);
-    final sinY = sin(rotY);
-    final cosX = cos(rotX);
-    final sinX = sin(rotX);
-
-    final color = _primaryColor;
-
-    // HTML: subtle background glow
-    final bgGrad = Paint()
-      ..shader = RadialGradient(
-        colors: [
-          const Color(0xFF142840).withOpacity(0.15),
+    // ── Fon glow ──────────────────────────────────────────────────
+    canvas.drawCircle(
+      Offset(cx, cy),
+      radius * 0.9,
+      Paint()
+        ..shader = RadialGradient(colors: [
+          col.withOpacity(0.07),
+          col.withOpacity(0.02),
           Colors.transparent,
-        ],
-      ).createShader(
-          Rect.fromCircle(center: Offset(cx, cy), radius: radius * 1.5));
-    canvas.drawRect(
-        Rect.fromLTWH(0, 0, size.width, size.height), bgGrad);
+        ], stops: const [0.0, 0.5, 1.0])
+            .createShader(Rect.fromCircle(
+                center: Offset(cx, cy), radius: radius * 0.9)),
+    );
 
-    // Har bir nuqtani 3D → 2D ga proyeksiya qilish
-    final projected = <_Projected>[];
+    // ── 3D proektsiya ─────────────────────────────────────────────
+    final buf = <_P>[];
+    buf.length = _dots.length;
 
-    for (final dot in _dots) {
-      // Radius bilan kengaytirish (normalized → real)
-      final dx = dot.x * radius;
-      final dy = dot.y * radius;
-      final dz = dot.z * radius;
+    for (int i = 0; i < _dots.length; i++) {
+      final d  = _dots[i];
+      final dx = d.x * radius;
+      final dy = d.y * radius;
+      final dz = d.z * radius;
 
-      // HTML: Rotate Y
-      // x1 = dot.x * cos(rotY) - dot.z * sin(rotY)
-      // z1 = dot.z * cos(rotY) + dot.x * sin(rotY)
+      // Y rotation
       final x1 = dx * cosY - dz * sinY;
       final z1 = dz * cosY + dx * sinY;
 
-      // HTML: Rotate X
-      // y2 = dot.y * cos(rotX) - z1 * sin(rotX)
-      // z2 = z1 * cos(rotX) + dot.y * sin(rotX)
+      // X rotation
       final y2 = dy * cosX - z1 * sinX;
       final z2 = z1 * cosX + dy * sinX;
 
-      // HTML: perspective = 1500 / (1500 - z2)
-      final perspective = fov / (fov - z2);
-      final px = x1 * perspective + cx;
-      final py = y2 * perspective + cy;
+      // Perspective
+      final persp = fov / (fov - z2);
+      final px = x1 * persp + cx;
+      final py = y2 * persp + cy;
 
-      // HTML: pulse = sin(dot.original.y * 0.01 + time * 0.005)
-      // dot.original.y HTML da radius birligida, biz dy ishlatamiz
-      final pulse = sin(dy * 0.01 + time * 0.005);
+      // Pulse wave
+      final pulse     = sin(dy * 0.01 + time * 0.005);
+      final intensity = max(0.08, pulse);
+      final opacity   = max(0.0, (z2 + radius) / (radius * 2));
 
-      // HTML: intensity = Math.max(0.1, pulse)
-      final intensity = max(0.1, pulse);
-
-      // HTML: opacity = Math.max(0, (dot.z + radius) / (radius * 2))
-      final opacity = max(0.0, (z2 + radius) / (radius * 2));
-
-      // HTML: size = dot.original.baseSize * dot.perspective
-      final dotSize = dot.baseSize * perspective;
-
-      projected.add(_Projected(
-        x: px, y: py, z: z2,
-        size: dotSize,
-        intensity: intensity,
-        opacity: opacity,
-      ));
+      buf[i] = _P(px, py, z2, d.size * persp, intensity, opacity, d.layer);
     }
 
-    // HTML: projectedDots.sort((a, b) => a.z - b.z)
-    projected.sort((a, b) => a.z.compareTo(b.z));
+    // ── Z ga qarab saralash ───────────────────────────────────────
+    buf.sort((a, b) => a.z.compareTo(b.z));
 
-    // Rasmga chizish
+    // ── Chizish — 3 pass ─────────────────────────────────────────
+
+    // Pass 1: Oddiy nuqtalar
     final normalPaint = Paint()..style = PaintingStyle.fill;
+    for (final p in buf) {
+      if (p.intensity > 0.75) continue; // keyingi passda
+      final s = (p.size * (1 + p.intensity * 0.4)).clamp(0.15, 4.5);
+      normalPaint.color = col.withOpacity((p.opacity * 0.55).clamp(0, 1));
+      canvas.drawCircle(Offset(p.x, p.y), s, normalPaint);
+    }
+
+    // Pass 2: Yorqin nuqtalar (glow bilan)
     final glowPaint = Paint()
       ..style = PaintingStyle.fill
-      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 4.0);
+      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 2.5);
+    for (final p in buf) {
+      if (p.intensity <= 0.75) continue;
+      final s = (p.size * (1 + p.intensity * 0.6)).clamp(0.5, 6.0);
+      glowPaint.color = Colors.white.withOpacity((p.opacity * 0.9).clamp(0, 1));
+      canvas.drawCircle(Offset(p.x, p.y), s, glowPaint);
+    }
 
-    for (final p in projected) {
-      // HTML: size * (1 + intensity * 0.5)
-      final s = (p.size * (1 + p.intensity * 0.5)).clamp(0.2, 9.0);
-
-      if (p.intensity > 0.8) {
-        // HTML: fillStyle = rgba(255,255,255,opacity) + shadowBlur=15 + shadowColor=#4af2ff
-        glowPaint.color = Colors.white.withOpacity(p.opacity.clamp(0.0, 1.0));
-        canvas.drawCircle(Offset(p.x, p.y), s, glowPaint);
-      } else {
-        // HTML: fillStyle = rgba(74, 242, 255, opacity * 0.6)
-        normalPaint.color = color.withOpacity((p.opacity * 0.6).clamp(0.0, 1.0));
-        canvas.drawCircle(Offset(p.x, p.y), s, normalPaint);
+    // Pass 3: Pulse ring (gapirsa/tinglasa)
+    if (isSpeaking || isListening) {
+      final ringPaint = Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1.0;
+      final wave = (time % 2000) / 2000;
+      for (int i = 1; i <= 3; i++) {
+        final r = radius * 0.4 + i * 18 + wave * 30;
+        final alpha = (0.4 - i * 0.1) * (1 - wave);
+        if (alpha <= 0) continue;
+        ringPaint.color = col.withOpacity(alpha.clamp(0, 1));
+        canvas.drawCircle(Offset(cx, cy), r, ringPaint);
       }
     }
+
+    // Pass 4: Markaziy yadro
+    final coreR = radius * 0.08 + sin(time * 0.003) * 3;
+    canvas.drawCircle(
+      Offset(cx, cy),
+      coreR,
+      Paint()
+        ..shader = RadialGradient(colors: [
+          Colors.white.withOpacity(0.95),
+          col.withOpacity(0.6),
+          Colors.transparent,
+        ]).createShader(Rect.fromCircle(center: Offset(cx, cy), radius: coreR)),
+    );
   }
 
   @override
-  bool shouldRepaint(_SpherePainter old) =>
-      old.rotX != rotX || old.rotY != rotY || old.time != time ||
-      old.isListening != isListening || old.isThinking != isThinking ||
-      old.isSpeaking != isSpeaking;
+  bool shouldRepaint(_SpherePainter o) =>
+      o.rotX != rotX || o.rotY != rotY || o.time != time ||
+      o.isListening != isListening || o.isThinking != isThinking ||
+      o.isSpeaking != isSpeaking;
 }
 
-// ─── Ma'lumot klasslari ────────────────────────────────────────────────────
+// ─── Model klasslari ──────────────────────────────────────────────────────
 
 class _Dot {
-  final double x, y, z, baseSize;
+  final double x, y, z, size;
+  final int layer;
   const _Dot({
-    required this.x, required this.y,
-    required this.z, required this.baseSize,
+    required this.x, required this.y, required this.z,
+    required this.size, required this.layer,
   });
 }
 
-class _Projected {
+class _P {
   final double x, y, z, size, intensity, opacity;
-  const _Projected({
-    required this.x, required this.y, required this.z,
-    required this.size, required this.intensity, required this.opacity,
-  });
+  final int layer;
+  const _P(this.x, this.y, this.z, this.size, this.intensity, this.opacity, this.layer);
 }
