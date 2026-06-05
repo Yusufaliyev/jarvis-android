@@ -4,9 +4,10 @@ import 'package:flutter_tts/flutter_tts.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:camera/camera.dart';
+
+// Assuming these services are correctly implemented in your project
 import '../services/groq_service.dart';
 import '../services/command_service.dart';
-import '../services/weather_service.dart';
 import '../services/face_service.dart';
 import '../widgets/jarvis_orb.dart';
 import 'auth_screen.dart';
@@ -26,22 +27,22 @@ class _JarvisScreenState extends State<JarvisScreen>
   final GroqService _groq = GroqService();
   final CommandService _cmd = CommandService();
 
-  // Holat
+  // State
   bool _listening = false;
   bool _thinking = false;
   bool _speaking = false;
   bool _showBtns = false;
   bool _showCamera = false;
 
-  // Kamera
+  // Camera
   CameraController? _camCtrl;
   String _emotion = '';
 
-  // Matn
+  // Text
   String _userText = '';
   String _jarvisText = '';
 
-  // Animatsiya
+  // Animation
   late AnimationController _btnsCtrl;
   late Animation<double> _btnsAnim;
   late AnimationController _micCtrl;
@@ -52,13 +53,15 @@ class _JarvisScreenState extends State<JarvisScreen>
     super.initState();
     _btnsCtrl = AnimationController(
         duration: const Duration(milliseconds: 500), vsync: this);
-    _btnsAnim =
-        CurvedAnimation(parent: _btnsCtrl, curve: Curves.easeOutBack);
+    _btnsAnim = CurvedAnimation(parent: _btnsCtrl, curve: Curves.easeOutBack);
+    
     _micCtrl = AnimationController(
         duration: const Duration(milliseconds: 800), vsync: this)
       ..repeat(reverse: true);
+    
     _micPulse = Tween<double>(begin: 1.0, end: 1.12).animate(
         CurvedAnimation(parent: _micCtrl, curve: Curves.easeInOut));
+    
     _initJarvis();
   }
 
@@ -68,15 +71,21 @@ class _JarvisScreenState extends State<JarvisScreen>
     await _tts.setSpeechRate(prefs.getDouble('tts_rate') ?? 0.88);
     await _tts.setVolume(prefs.getDouble('tts_volume') ?? 1.0);
     await _tts.setPitch(prefs.getDouble('tts_pitch') ?? 1.0);
-    _tts.setCompletionHandler(
-        () { if (mounted) setState(() => _speaking = false); });
+    
+    _tts.setCompletionHandler(() {
+      if (mounted) setState(() => _speaking = false);
+    });
+
     await Future.delayed(const Duration(milliseconds: 800));
     _speak(widget.greeting ?? 'Assalomu alaykum! Men Jarvis. Buyuring!');
   }
 
   Future<void> _speak(String text) async {
     if (!mounted) return;
-    setState(() { _jarvisText = text; _speaking = true; });
+    setState(() {
+      _jarvisText = text;
+      _speaking = true;
+    });
     await _tts.stop();
     await _tts.speak(text);
   }
@@ -87,9 +96,14 @@ class _JarvisScreenState extends State<JarvisScreen>
       _speak('Mikrofon ruxsati kerak!');
       return;
     }
+    
     final ok = await _speech.initialize(
         onError: (_) { if (mounted) setState(() => _listening = false); });
-    if (!ok) { _speak('Mikrofon ishlamayapti!'); return; }
+    
+    if (!ok) {
+      _speak('Mikrofon ishlamayapti!');
+      return;
+    }
 
     setState(() {
       _listening = true;
@@ -118,11 +132,14 @@ class _JarvisScreenState extends State<JarvisScreen>
   Future<void> _process(String text) async {
     _speech.stop();
     if (!mounted) return;
-    setState(() { _listening = false; _thinking = true; _userText = text; });
+    setState(() {
+      _listening = false;
+      _thinking = true;
+      _userText = text;
+    });
 
     final local = await _cmd.execute(text);
 
-    // In-app kamera buyrug'i
     if (local == '__CAMERA__') {
       if (mounted) setState(() => _thinking = false);
       await _openCamera();
@@ -138,15 +155,14 @@ class _JarvisScreenState extends State<JarvisScreen>
       await _speak(ai);
     }
 
-    // Tugmalarni yashirish
     await Future.delayed(const Duration(seconds: 4));
-    if (mounted) {
+    if (mounted && !_listening) {
       _btnsCtrl.reverse();
       setState(() => _showBtns = false);
     }
   }
 
-  // ── In-app kamera ─────────────────────────────────────────────
+  // Camera Logic
   Future<void> _openCamera() async {
     await FaceService.init();
     final cam = FaceService.frontCamera;
@@ -154,15 +170,24 @@ class _JarvisScreenState extends State<JarvisScreen>
       await _speak('Kamera topilmadi!');
       return;
     }
+    
     final ctrl = CameraController(cam, ResolutionPreset.medium, enableAudio: false);
     try {
       await ctrl.initialize();
-      if (!mounted) { ctrl.dispose(); return; }
-      setState(() { _camCtrl = ctrl; _showCamera = true; });
+      if (!mounted) {
+        await ctrl.dispose();
+        return;
+      }
+      setState(() {
+        _camCtrl = ctrl;
+        _showCamera = true;
+      });
+      
       await _speak('Kamera yoqildi! Yuzingizni ko\'rmoqdaman...');
       await Future.delayed(const Duration(seconds: 2));
 
-      if (!mounted) return;
+      if (!mounted || _camCtrl == null) return;
+      
       final photo = await _camCtrl!.takePicture();
       final result = await FaceService.analyzeFile(photo.path);
 
@@ -183,16 +208,21 @@ class _JarvisScreenState extends State<JarvisScreen>
 
   void _closeCamera() {
     _camCtrl?.dispose();
-    if (mounted) setState(() { _camCtrl = null; _showCamera = false; _emotion = ''; });
+    if (mounted) {
+      setState(() {
+        _camCtrl = null;
+        _showCamera = false;
+        _emotion = '';
+      });
+    }
   }
 
-  // ── Build ──────────────────────────────────────────────────────
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: const Color(0xFF030812),
       body: Stack(children: [
-        // Fon
+        // Background
         Container(decoration: const BoxDecoration(
           gradient: RadialGradient(
             center: Alignment(0, -0.4), radius: 1.5,
@@ -200,7 +230,7 @@ class _JarvisScreenState extends State<JarvisScreen>
           ),
         )),
 
-        // Asosiy kontent
+        // Main Content
         SafeArea(child: Column(children: [
           _topBar(),
           Expanded(child: _showCamera ? _cameraView() : _mainView()),
@@ -211,7 +241,6 @@ class _JarvisScreenState extends State<JarvisScreen>
     );
   }
 
-  // ── Asosiy ko'rinish ──────────────────────────────────────────
   Widget _mainView() => Center(
     child: SingleChildScrollView(
       child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
@@ -231,78 +260,67 @@ class _JarvisScreenState extends State<JarvisScreen>
     ),
   );
 
-  // ── Kamera ko'rinishi ─────────────────────────────────────────
-  Widget _cameraView() => Expanded(
-    child: Column(children: [
-      // Kamera preview
-      Expanded(
-        child: Stack(children: [
-          // Preview
-          ClipRRect(
-            borderRadius: BorderRadius.circular(24),
-            child: _camCtrl != null && _camCtrl!.value.isInitialized
-                ? CameraPreview(_camCtrl!)
-                : Container(
-                    color: const Color(0xFF0A1628),
-                    child: const Center(child: CircularProgressIndicator(
-                      color: Color(0xFF00D4FF)))),
-          ),
-          // Burchaklar
-          ..._cameraCorners(),
-          // Yuz doirasi
-          Center(child: Container(
-            width: 180, height: 220,
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(90),
-              border: Border.all(
-                  color: const Color(0xFF00D4FF).withOpacity(0.6), width: 1.5)),
-          )),
-          // Yopish tugmasi
-          Positioned(top: 12, right: 12,
-            child: GestureDetector(
-              onTap: _closeCamera,
-              child: Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: Colors.black54,
-                  borderRadius: BorderRadius.circular(20)),
-                child: const Icon(Icons.close, color: Colors.white, size: 22)))),
-          // Xissiyot
-          if (_emotion.isNotEmpty)
-            Positioned(bottom: 16, left: 0, right: 0,
-              child: Center(child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                decoration: BoxDecoration(
-                  color: Colors.black54,
-                  borderRadius: BorderRadius.circular(20)),
-                child: Text(_emotion, style: const TextStyle(
-                  color: Colors.white, fontSize: 18, letterSpacing: 1))))),
-        ]),
-      ),
-      // Jarvis javobi
-      Padding(
-        padding: const EdgeInsets.all(16),
-        child: _textBox(),
-      ),
-      // Yopish tugmasi
-      Padding(
-        padding: const EdgeInsets.only(bottom: 16),
-        child: ElevatedButton.icon(
-          onPressed: _closeCamera,
-          icon: const Icon(Icons.camera_alt_outlined, color: Colors.black),
-          label: const Text('Kamerani yopish',
-              style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold)),
-          style: ElevatedButton.styleFrom(
-            backgroundColor: const Color(0xFF00D4FF),
-            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16))),
+  Widget _cameraView() => Column(children: [
+    Expanded(
+      child: Stack(children: [
+        ClipRRect(
+          borderRadius: BorderRadius.circular(24),
+          child: _camCtrl != null && _camCtrl!.value.isInitialized
+              ? CameraPreview(_camCtrl!)
+              : Container(
+                  color: const Color(0xFF0A1628),
+                  child: const Center(child: CircularProgressIndicator(
+                    color: Color(0xFF00D4FF)))),
         ),
+        ..._cameraCorners(),
+        Center(child: Container(
+          width: 180, height: 220,
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(90),
+            border: Border.all(
+                color: const Color(0xFF00D4FF).withOpacity(0.6), width: 1.5)),
+        )),
+        Positioned(top: 12, right: 12,
+          child: GestureDetector(
+            onTap: _closeCamera,
+            child: Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: Colors.black54,
+                borderRadius: BorderRadius.circular(20)),
+              child: const Icon(Icons.close, color: Colors.white, size: 22)))),
+        if (_emotion.isNotEmpty)
+          Positioned(bottom: 16, left: 0, right: 0,
+            child: Center(child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              decoration: BoxDecoration(
+                color: Colors.black54,
+                borderRadius: BorderRadius.circular(20)),
+              child: Text(_emotion, style: const TextStyle(
+                color: Colors.white, fontSize: 18, letterSpacing: 1))))),
+      ]),
+    ),
+    Padding(
+      padding: const EdgeInsets.all(16),
+      child: _textBox(),
+    ),
+    Padding(
+      padding: const EdgeInsets.only(bottom: 16),
+      child: ElevatedButton.icon(
+        onPressed: _closeCamera,
+        icon: const Icon(Icons.camera_alt_outlined, color: Colors.black),
+        label: const Text('Kamerani yopish',
+            style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold)),
+        style: ElevatedButton.styleFrom(
+          backgroundColor: const Color(0xFF00D4FF),
+          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16))),
       ),
-    ]),
-  ) as Widget;
+    ),
+  ]);
 
   List<Widget> _cameraCorners() {
-    final c = const Color(0xFF00D4FF);
+    const c = Color(0xFF00D4FF);
     return [
       Positioned(top: 8, left: 8, child: _corner(c, true, true)),
       Positioned(top: 8, right: 8, child: _corner(c, true, false)),
@@ -315,21 +333,20 @@ class _JarvisScreenState extends State<JarvisScreen>
     width: 24, height: 24,
     child: CustomPaint(painter: _CornerPainter(c, top, left)));
 
-  // ── Yuqori panel ──────────────────────────────────────────────
   Widget _topBar() => Padding(
     padding: const EdgeInsets.fromLTRB(20, 12, 20, 0),
     child: Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-      Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        const Text('JARVIS', style: TextStyle(
+      const Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Text('JARVIS', style: TextStyle(
           color: Color(0xFF00D4FF), fontSize: 26,
           fontWeight: FontWeight.bold, letterSpacing: 6)),
-        const Text('Sun\'iy Intellekt', style: TextStyle(
+        Text('Sun\'iy Intellekt', style: TextStyle(
           color: Colors.white24, fontSize: 10, letterSpacing: 2)),
       ]),
       Row(children: [
         GestureDetector(
           onTap: () => Navigator.push(context,
-              MaterialPageRoute(builder: (_) => AuthScreen())),
+              MaterialPageRoute(builder: (_) => const AuthScreen())),
           child: Container(
             margin: const EdgeInsets.only(right: 10),
             padding: const EdgeInsets.all(9),
@@ -356,7 +373,6 @@ class _JarvisScreenState extends State<JarvisScreen>
     ]),
   );
 
-  // ── Matn qutisi ───────────────────────────────────────────────
   Widget _textBox() {
     final txt = _listening ? '🎙️ Tinglamoqdaman...'
         : _thinking ? '⚡ Fikrlamoqdaman...'
@@ -393,7 +409,6 @@ class _JarvisScreenState extends State<JarvisScreen>
       overflow: TextOverflow.ellipsis),
   );
 
-  // ── Buyruq tugmalari (yashirin) ───────────────────────────────
   final List<Map<String, dynamic>> _btns = const [
     {'icon': Icons.send_rounded,        'label': 'Telegram',    'cmd': 'telegram'},
     {'icon': Icons.play_circle_rounded, 'label': 'YouTube',     'cmd': 'youtube'},
@@ -407,7 +422,7 @@ class _JarvisScreenState extends State<JarvisScreen>
 
   Widget _cmdButtons() => AnimatedBuilder(
     animation: _btnsAnim,
-    builder: (_, __) => ClipRect(child: Align(
+    builder: (context, child) => ClipRect(child: Align(
       heightFactor: _btnsAnim.value,
       child: Opacity(
         opacity: _btnsAnim.value.clamp(0.0, 1.0),
@@ -450,7 +465,6 @@ class _JarvisScreenState extends State<JarvisScreen>
           Text(label, style: const TextStyle(color: Colors.white54, fontSize: 10)),
         ])));
 
-  // ── Mikrofon ──────────────────────────────────────────────────
   Widget _micButton() => Padding(
     padding: const EdgeInsets.only(bottom: 28, top: 8),
     child: Column(children: [
@@ -496,8 +510,6 @@ class _JarvisScreenState extends State<JarvisScreen>
   }
 }
 
-// ── Burchak rasmi ─────────────────────────────────────────────────────────
-
 class _CornerPainter extends CustomPainter {
   final Color c;
   final bool top, left;
@@ -507,10 +519,15 @@ class _CornerPainter extends CustomPainter {
   void paint(Canvas canvas, Size size) {
     final p = Paint()..color = c..strokeWidth = 2..style = PaintingStyle.stroke;
     final path = Path();
-    if (top && left) { path.moveTo(0, size.height); path.lineTo(0, 0); path.lineTo(size.width, 0); }
-    else if (top) { path.moveTo(0, 0); path.lineTo(size.width, 0); path.lineTo(size.width, size.height); }
-    else if (left) { path.moveTo(0, 0); path.lineTo(0, size.height); path.lineTo(size.width, size.height); }
-    else { path.moveTo(0, size.height); path.lineTo(size.width, size.height); path.lineTo(size.width, 0); }
+    if (top && left) {
+      path.moveTo(0, size.height); path.lineTo(0, 0); path.lineTo(size.width, 0);
+    } else if (top) {
+      path.moveTo(0, 0); path.lineTo(size.width, 0); path.lineTo(size.width, size.height);
+    } else if (left) {
+      path.moveTo(0, 0); path.lineTo(0, size.height); path.lineTo(size.width, size.height);
+    } else {
+      path.moveTo(0, size.height); path.lineTo(size.width, size.height); path.lineTo(size.width, 0);
+    }
     canvas.drawPath(path, p);
   }
 
